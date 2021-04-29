@@ -20,7 +20,7 @@ from homeassistant.components.lock import LockEntity
 _LOGGER = logging.getLogger(__name__)
 
 
-def async_setup_entry(hass: HomeAssistant, config: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, config: ConfigEntry) -> bool:
     api = GlueHomeLocksApi(config.data.get("apiKey"))
 
     try:
@@ -53,7 +53,7 @@ def async_setup_entry(hass: HomeAssistant, config: ConfigEntry) -> bool:
 
     await coordinator.async_config_entry_first_refresh()
 
-    async_add_entities(
+    await async_add_entities(
         GlueHomeLockEntity(coordinator, ent) for idx, ent in enumerate(coordinator.data)
     )
 
