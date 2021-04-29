@@ -1,3 +1,6 @@
 {
-  "name": "Glue Home"
+  "name": "Glue Home",
+  "domains": [
+    "lock"
+  ]
 }

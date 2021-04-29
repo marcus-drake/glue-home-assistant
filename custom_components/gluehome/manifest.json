@@ -2,6 +2,8 @@
   "domain": "gluehome",
   "name": "Glue Home",
   "homeassistant": "2021.4.1",
+  "documentation": "https://github.com/marcuslonnberg/glue-home-assistant",
+  "issue_tracker": "https://github.com/marcuslonnberg/glue-home-assistant/issues",
   "requirements": [],
   "codeowners": [
     "@marcuslonnberg"
