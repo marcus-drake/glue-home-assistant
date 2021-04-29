@@ -3,5 +3,8 @@
   "name": "Glue Home",
   "homeassistant": "2021.4.1",
   "requirements": [],
+  "codeowners": [
+    "@marcuslonnberg"
+  ],
   "iot_class": "cloud_polling"
 }
