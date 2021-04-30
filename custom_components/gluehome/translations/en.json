@@ -1,0 +1,18 @@
+{
+    "config": {
+        "error": {
+            "invalid_auth": "Invalid credentials."
+        },
+        "flow_title": "Glue Home setup",
+        "step": {
+            "user": {
+                "data": {
+                    "username": "Username (email address)",
+                    "password": "Password"
+                },
+                "description": "Enter your Glue Home credentials.",
+                "title": "Glue Home"
+            }
+        }
+    }
+}

@@ -1,10 +1,15 @@
+import logging
 from typing import Optional
 
 import requests
 from requests.auth import AuthBase, HTTPBasicAuth
 
-from const import GLUE_HOME_HOST
-from exceptions import GlueHomeNetworkError, GlueHomeInvalidAuth, GlueHomeServerError
+from .const import GLUE_HOME_HOST
+from .exceptions import GlueHomeNetworkError, GlueHomeInvalidAuth, GlueHomeServerError, GlueHomeNonSuccessfulResponse, \
+    GlueHomeException
+
+_LOGGER = logging.getLogger(__name__)
+
 
 UNKNOWN_STATES = [
     'unknown'
@@ -58,12 +63,15 @@ class GlueHomeApiKeysApi:
             raise GlueHomeInvalidAuth
         if 500 <= response.status_code < 600:
             raise GlueHomeServerError
+        if 200 > response.status_code >= 300:
+            raise GlueHomeNonSuccessfulResponse
         return response
 
     def create_api_key(self):
+        _LOGGER.info("Creating API key")
         response = self.request("post", "/v1/api-keys",
                                 {"name": "libgluehome", "scopes": ["events.read", "locks.read", "locks.write"]})
-        return response.json().apiKey
+        return response.json()["apiKey"]
 
 
 class GlueHomeLocksApi:
@@ -85,39 +93,52 @@ class GlueHomeLock:
 
     @property
     def id(self):
-        return self._state.id
+        return self._state["id"]
 
     @property
     def description(self):
-        return self._state.description
+        return self._state["description"]
 
     @property
-    def serialNumber(self):
-        return self._state.serialNumber
+    def serial_number(self):
+        return self._state["serialNumber"]
 
     @property
-    def firmwareVersion(self):
-        return self._state.firmwareVersion
+    def model_name(self):
+        return self.serial_number[0:4]
 
     @property
-    def batteryStatus(self):
-        return self._state.batteryStatus
+    def firmware_version(self):
+        return self._state["firmwareVersion"]
 
     @property
-    def connectionStatus(self):
-        return self._state.connectionStatus
+    def battery_status(self):
+        return self._state["batteryStatus"]
 
     @property
-    def lastLockEventType(self):
-        return self._state.lastLockEvent.eventType
+    def connection_status(self):
+        return self._state["connectionStatus"]
 
     @property
-    def lastLockEventDate(self):
-        return self._state.lastLockEvent.lastLockEventDate
+    def last_lock_event_type(self):
+        if "lastLockEvent" in self._state and "eventType" in self._state["lastLockEvent"]:
+            return self._state["lastLockEvent"]["eventType"]
+        return None
+
+    @property
+    def last_lock_event_time(self):
+        if "lastLockEvent" in self._state and "eventTime" in self._state["lastLockEvent"]:
+            return self._state["lastLockEvent"]["eventTime"]
+        return None
 
     def operation(self, operation: str):
-        response = request("post", "/v1/locks/" + self._state.id + "/operations", HTTPApiKeyAuth(self._api_key),
-                           {type: operation})
+        try:
+            _LOGGER.info(f"Running operation {operation} on lock {self.id}")
+            response = request("post", "/v1/locks/" + self.id + "/operations", HTTPApiKeyAuth(self._api_key),
+                               {"type": operation})
+        except GlueHomeException as ex:
+            _LOGGER.error(f"Failed to run operation {operation} on lock ${self.id}")
+            raise ex
         return response.json()
 
 
@@ -142,7 +163,7 @@ def request(
     if response.status_code in [401, 403]:
         raise GlueHomeInvalidAuth
     if 500 <= response.status_code < 600:
-        raise GlueHomeServerError
+        raise GlueHomeServerError(response.status_code)
     return response
 
 
