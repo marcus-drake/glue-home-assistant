@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -90,17 +91,19 @@ class GlueHomeLockEntity(CoordinatorEntity, LockEntity):
         else:
             return STATE_UNKNOWN
 
-    def lock(self, **kwargs) -> None:
+    async def async_lock(self, **kwargs) -> None:
         """Lock the device."""
-        self.hass.async_add_executor_job(self._lock().operation, "lock")
+        await self.hass.async_add_executor_job(self._lock().operation, "lock")
 
-        self.coordinator.async_request_refresh()
+        await asyncio.sleep(15_000)
+        await self.coordinator.async_request_refresh()
 
-    def unlock(self, **kwargs) -> None:
+    async def async_unlock(self, **kwargs) -> None:
         """Unlock the device."""
-        self.hass.async_add_executor_job(self._lock().operation, "unlock")
+        await self.hass.async_add_executor_job(self._lock().operation, "unlock")
 
-        self.coordinator.async_request_refresh()
+        await asyncio.sleep(15_000)
+        await self.coordinator.async_request_refresh()
 
     @property
     def extra_state_attributes(self) -> dict:
