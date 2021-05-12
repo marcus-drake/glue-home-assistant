@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         name="gluehome",
         update_method=async_update_data,
         # Polling interval. Will only be polled if there are subscribers.
-        update_interval=timedelta(seconds=30),
+        update_interval=timedelta(seconds=20),
     )
 
     await coordinator.async_config_entry_first_refresh()
