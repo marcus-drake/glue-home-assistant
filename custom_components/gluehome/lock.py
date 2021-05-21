@@ -9,9 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed, CoordinatorEntity
 
-from .api import GlueHomeLocksApi, GlueHomeLock, SUCCESSFUL_CONNECTED_STATUSES, LOCKED_STATES, UNLOCKED_STATES
+from .api import GlueHomeLocksApi, GlueHomeLock, SUCCESSFUL_CONNECTED_STATUSES, LOCKED_STATES, UNLOCKED_STATES, \
+    GlueHomeLockOperation
 from .const import CONF_API_KEY, DOMAIN, ATTR_LAST_LOCK_EVENT_TIME, ATTR_LAST_LOCK_EVENT_TYPE, ATTR_CONNECTION_STATUS
-from .exceptions import GlueHomeNetworkError, GlueHomeInvalidAuth
+from .exceptions import GlueHomeNetworkError, GlueHomeInvalidAuth, GlueHomeException, GlueHomeLockOperationFailed
 from homeassistant.components.lock import LockEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,16 +23,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     api = GlueHomeLocksApi(config_entry.data.get(CONF_API_KEY))
 
-    try:
-        await hass.async_add_executor_job(api.get_locks)
-    except GlueHomeInvalidAuth:
-        _LOGGER.error("Failed to authenticate with API key to Glue Home")
-        raise ConfigEntryNotReady
-
     async def async_update_data():
         try:
-            async with async_timeout.timeout(10):
+            async with async_timeout.timeout(60):
                 return await hass.async_add_executor_job(api.get_locks)
+        except GlueHomeInvalidAuth:
+            _LOGGER.error("Failed to authenticate with API key to Glue Home")
+            raise ConfigEntryNotReady
         except GlueHomeNetworkError as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
@@ -42,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         name="gluehome",
         update_method=async_update_data,
         # Polling interval. Will only be polled if there are subscribers.
-        update_interval=timedelta(seconds=20),
+        update_interval=timedelta(seconds=30),
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -93,16 +91,32 @@ class GlueHomeLockEntity(CoordinatorEntity, LockEntity):
 
     async def async_lock(self, **kwargs) -> None:
         """Lock the device."""
-        await self.hass.async_add_executor_job(self._lock().operation, "lock")
-
-        await asyncio.sleep(15_000)
-        await self.coordinator.async_request_refresh()
+        await self._run_operation("lock")
 
     async def async_unlock(self, **kwargs) -> None:
         """Unlock the device."""
-        await self.hass.async_add_executor_job(self._lock().operation, "unlock")
+        await self._run_operation("unlock")
 
-        await asyncio.sleep(15_000)
+    async def _run_operation(self, operation: str) -> None:
+        _LOGGER.info(f"Requesting to run operation {operation} on {self._lock().id}")
+        initial_lock_operation = await self.hass.async_add_executor_job(self._lock().create_operation, operation)
+
+        async def poll_until_operation_completed(lock_operation: GlueHomeLockOperation, retries_left):
+            if retries_left <= 0:
+                _LOGGER.debug(f"Operation {lock_operation.id} ran out of retries, will stop polling")
+                return None
+            elif lock_operation.status == "failed":
+                raise GlueHomeLockOperationFailed(self._lock().description, operation, lock_operation.reason)
+            elif lock_operation.status != "pending":
+                _LOGGER.info(f"Operation completed with {lock_operation.status} for lock {self._lock().id}")
+                return None
+            else:
+                await asyncio.sleep(1)
+                update = await self.hass.async_add_executor_job(lock_operation.poll)
+                await poll_until_operation_completed(update, retries_left - 1)
+
+        await poll_until_operation_completed(initial_lock_operation, 30)
+
         await self.coordinator.async_request_refresh()
 
     @property

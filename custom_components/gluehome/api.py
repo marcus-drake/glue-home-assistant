@@ -10,7 +10,6 @@ from .exceptions import GlueHomeNetworkError, GlueHomeInvalidAuth, GlueHomeServe
 
 _LOGGER = logging.getLogger(__name__)
 
-
 UNKNOWN_STATES = [
     'unknown'
 ]
@@ -70,7 +69,7 @@ class GlueHomeApiKeysApi:
     def create_api_key(self):
         _LOGGER.info("Creating API key")
         response = self.request("post", "/v1/api-keys",
-                                {"name": "libgluehome", "scopes": ["events.read", "locks.read", "locks.write"]})
+                                {"name": "glue-home-assistant", "scopes": ["events.read", "locks.read", "locks.write"]})
         return response.json()["apiKey"]
 
 
@@ -81,7 +80,9 @@ class GlueHomeLocksApi:
     def get_locks(self):
         response = request("get", "/v1/locks", auth=HTTPApiKeyAuth(self._api_key))
         locks = []
-        for lock_state in response.json():
+        json = response.json()
+        _LOGGER.debug(f"Response for get locks: {json}")
+        for lock_state in json:
             locks.append(GlueHomeLock(lock_state, self._api_key))
         return locks
 
@@ -131,15 +132,50 @@ class GlueHomeLock:
             return self._state["lastLockEvent"]["eventTime"]
         return None
 
-    def operation(self, operation: str):
+    def create_operation(self, operation: str):
         try:
-            _LOGGER.info(f"Running operation {operation} on lock {self.id}")
+            _LOGGER.info(f"Running operation '{operation}' on lock {self.id}")
             response = request("post", "/v1/locks/" + self.id + "/operations", HTTPApiKeyAuth(self._api_key),
                                {"type": operation})
         except GlueHomeException as ex:
-            _LOGGER.error(f"Failed to run operation {operation} on lock ${self.id}")
+            _LOGGER.error(f"Failed to create operation '{operation}' on lock {self.id}")
             raise ex
-        return response.json()
+        json = response.json()
+        _LOGGER.debug(f"Response for create lock operation '{operation}' on lock {self.id}: {json}")
+        return GlueHomeLockOperation(self.id, self._api_key, json)
+
+
+class GlueHomeLockOperation:
+    def __init__(self, lock_id, api_key, state):
+        self._lock_id = lock_id
+        self._api_key = api_key
+        self._state = state
+
+    @property
+    def id(self):
+        return self._state["id"]
+
+    @property
+    def status(self):
+        return self._state["status"]
+
+    @property
+    def reason(self):
+        if "reason" in self._state:
+            return self._state["reason"]
+        return None
+
+    def poll(self):
+        try:
+            response = request("get", "/v1/locks/" + self._lock_id + "/operations/" + self.id,
+                               HTTPApiKeyAuth(self._api_key))
+        except GlueHomeException as ex:
+            _LOGGER.error(f"Failed get status for operation {self.id} on lock {self._lock_id}")
+            raise ex
+
+        json = response.json()
+        _LOGGER.debug(f"Response for get lock operation {self.id}: {json}")
+        return GlueHomeLockOperation(self._lock_id, self._api_key, json)
 
 
 def request(
@@ -163,7 +199,7 @@ def request(
     if response.status_code in [401, 403]:
         raise GlueHomeInvalidAuth
     if 500 <= response.status_code < 600:
-        raise GlueHomeServerError(response.status_code)
+        raise GlueHomeServerError(response.status_code, response.text)
     return response
 
 
