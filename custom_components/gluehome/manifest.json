@@ -1,7 +1,7 @@
 {
   "domain": "gluehome",
   "name": "Glue Home",
-  "homeassistant": "2021.4.1",
+  "homeassistant": "2021.8.0",
   "config_flow": true,
   "documentation": "https://github.com/marcuslonnberg/glue-home-assistant",
   "issue_tracker": "https://github.com/marcuslonnberg/glue-home-assistant/issues",

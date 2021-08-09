@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Optional
 
 import async_timeout
 from homeassistant.config_entries import ConfigEntry
@@ -59,6 +60,9 @@ class GlueHomeLockEntity(CoordinatorEntity, LockEntity):
         super().__init__(coordinator)
         self._index = index
 
+        self._is_locking = False
+        self._is_unlocking = False
+
     def _lock(self) -> GlueHomeLock:
         return self.coordinator.data[self._index]
 
@@ -76,26 +80,43 @@ class GlueHomeLockEntity(CoordinatorEntity, LockEntity):
         return self._lock().connection_status in SUCCESSFUL_CONNECTED_STATUSES
 
     @property
-    def is_locked(self) -> bool:
-        return self._lock().last_lock_event_type in LOCKED_STATES
+    def is_locked(self) -> Optional[bool]:
+        if self._lock().last_lock_event_type in LOCKED_STATES:
+            return True
+        elif self._lock().last_lock_event_type in UNLOCKED_STATES:
+            return False
+        else:
+            return None
 
     @property
-    def state(self) -> str:
-        """Get the state of the device."""
-        if self.is_locked:
-            return STATE_LOCKED
-        elif self._lock().last_lock_event_type in UNLOCKED_STATES:
-            return STATE_UNLOCKED
-        else:
-            return STATE_UNKNOWN
+    def is_locking(self) -> Optional[bool]:
+        return self._is_locking
+
+    @property
+    def is_unlocking(self) -> Optional[bool]:
+        return self._is_unlocking
 
     async def async_lock(self, **kwargs) -> None:
         """Lock the device."""
-        await self._run_operation("lock")
+        try:
+            self._is_locking = True
+            await self.async_update_ha_state()
+
+            await self._run_operation("lock")
+        finally:
+            self._is_locking = False
+            await self.async_update_ha_state()
 
     async def async_unlock(self, **kwargs) -> None:
         """Unlock the device."""
-        await self._run_operation("unlock")
+        try:
+            self._is_unlocking = True
+            await self.async_update_ha_state()
+
+            await self._run_operation("unlock")
+        finally:
+            self._is_unlocking = False
+            await self.async_update_ha_state()
 
     async def _run_operation(self, operation: str) -> None:
         _LOGGER.info(f"Requesting to run operation {operation} on {self._lock().id}")
